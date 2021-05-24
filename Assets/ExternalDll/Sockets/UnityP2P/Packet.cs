@@ -39,32 +39,85 @@ namespace UnityP2P
     {
         Transform,
         BeginConnection,
-        EndConnection
+        EndConnection,
+        InstanciateObject
     }
 
     [Serializable]
     public class TransformData
     {
-        SerializableVector3 position;
+        public SerializableVector3 position;
+
+        public SerializableQuaternion quaternion;
 
         public TransformData(Vector3 pos, Quaternion rot)
         {
             position = new SerializableVector3(pos);
+            quaternion = new SerializableQuaternion(rot);
+        }
+
+        public TransformData(Vector3 pos)
+        {
+            position = new SerializableVector3(pos);
+            quaternion = new SerializableQuaternion(Quaternion.identity);
         }
     }
 
     [Serializable]
     public class SerializableVector3
     {
-        float x, y, z;
-
-        float magnitude;
+        public float x, y, z;
         public SerializableVector3(Vector3 v)
         {
             this.x = v.x;
             this.y = v.y;
             this.z = v.z;
-            this.magnitude = v.magnitude;
         }
+
+        public static explicit operator Vector3(SerializableVector3 v)
+        {
+            return new Vector3(v.x, v.y, v.z);
+        }
+    }
+
+    [Serializable]
+    public class SerializableQuaternion
+    {
+        public float x, y, z, w;
+        public SerializableQuaternion(Quaternion q)
+        {
+            x = q.x;
+            y = q.y;
+            z = q.z;
+            w = q.w;
+        }
+
+        public static explicit operator Quaternion(SerializableQuaternion q)
+        {
+            return new Quaternion(q.x, q.y, q.z, q.w);
+        }
+    }
+
+    [Serializable]
+    public class ObjectInstanciationRequest
+    {
+        public string objectId;
+        public TransformData positionData;
+
+        public ObjectInstanciationType objectType;
+
+        public ObjectInstanciationRequest(string objectId, TransformData data, ObjectInstanciationType objType)
+        {
+            this.objectId = objectId;
+            this.positionData = data;
+            this.objectType = objType;
+        }
+    }
+
+    [Serializable]
+    public enum ObjectInstanciationType
+    {
+        Character,
+        Room
     }
 }

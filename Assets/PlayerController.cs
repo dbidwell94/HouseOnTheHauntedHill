@@ -1,22 +1,16 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
 
-public class PlayerController : MonoBehaviour
+public class PlayerController : Networkable, IHaveNavAgent
 {
-    NavMeshAgent myAgent;
+    public NavMeshAgent myAgent;
     public Animator myAnimator;
 
-    Vector3 previousPos;
-    Quaternion previousRot;
+    private CharacterName myCharName;
 
-    // Start is called before the first frame update
-    void Start()
+    void Awake()
     {
-        myAgent = GetComponent<NavMeshAgent>();
-        previousPos = transform.position;
-        previousRot = transform.rotation;
+        myCharName = CharacterName.Louise;
     }
 
     // Update is called once per frame
@@ -24,31 +18,32 @@ public class PlayerController : MonoBehaviour
     {
         if (Input.GetMouseButtonDown(0))
         {
-            MovePlayer();
+            RequestMove();
         }
     }
 
     void FixedUpdate()
     {
         myAnimator.SetFloat("WalkSpeed", myAgent.velocity.magnitude / myAgent.speed);
-        if (previousPos != transform.position || previousRot != transform.rotation)
-        {
-            NetworkManager.Instance.UpdateGameObjectLocation(this.gameObject.transform);
-        }
-        previousPos = transform.position;
-        previousRot = transform.rotation;
     }
 
-    void MovePlayer()
+    void RequestMove()
     {
         RaycastHit hit;
-
         Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
-
         if (Physics.Raycast(ray, out hit) && hit.collider.gameObject.tag == "Floor")
         {
-            myAgent.destination = new Vector3(hit.point.x, transform.position.y, hit.point.z);
+            NetworkManager.Instance.RequestMoveObject(this, new Vector3(hit.point.x, transform.position.y, hit.point.z));
         }
     }
 
+    public void MoveAgent(Vector3 destination)
+    {
+        myAgent.SetDestination(destination);
+    }
+
+    public CharacterName GetCharacterName()
+    {
+        return myCharName;
+    }
 }

@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using System.Linq;
@@ -7,6 +6,8 @@ using System.Linq;
 public class GameManager : MonoBehaviour
 {
     public RoomCard[] roomPrefabs;
+
+    public CharacterPrefab[] characterPrefabs;
 
     public Vector2 DefaultRoomSize { get; } = new Vector2(11, 4);
 
@@ -83,4 +84,19 @@ public static class Randomizer
     {
         return new Queue<T>(toRandomize);
     }
+}
+
+public enum CharacterName
+{
+    Louise,
+    NetworkLouise
+}
+
+public class CharacterPrefab
+{
+    [SerializeField]
+    public CharacterName characterName;
+
+    [SerializeField]
+    public GameObject prefab;
 }
