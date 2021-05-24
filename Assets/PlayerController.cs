@@ -8,10 +8,15 @@ public class PlayerController : MonoBehaviour
     NavMeshAgent myAgent;
     public Animator myAnimator;
 
+    Vector3 previousPos;
+    Quaternion previousRot;
+
     // Start is called before the first frame update
     void Start()
     {
         myAgent = GetComponent<NavMeshAgent>();
+        previousPos = transform.position;
+        previousRot = transform.rotation;
     }
 
     // Update is called once per frame
@@ -26,6 +31,12 @@ public class PlayerController : MonoBehaviour
     void FixedUpdate()
     {
         myAnimator.SetFloat("WalkSpeed", myAgent.velocity.magnitude / myAgent.speed);
+        if (previousPos != transform.position || previousRot != transform.rotation)
+        {
+            NetworkManager.Instance.UpdateGameObjectLocation(this.gameObject.transform);
+        }
+        previousPos = transform.position;
+        previousRot = transform.rotation;
     }
 
     void MovePlayer()

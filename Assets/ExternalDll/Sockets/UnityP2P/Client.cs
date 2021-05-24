@@ -1,5 +1,6 @@
 using System;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Net.Sockets;
 using System.Net;
 using UnityEngine;
@@ -8,21 +9,25 @@ namespace UnityP2P
 {
     public class Client : IDisposable
     {
-        private bool disposedValue;
+        #region Events
 
-        private Socket tcpClient;
+        public delegate void ClientDelegate(ServerPacket serverPacket);
+        public event ClientDelegate OnServerDataReceived;
 
-        private IPEndPoint remoteServerEndpoint;
+        #endregion
 
-        private IPEndPoint clientEndpoint;
+
+        public readonly string id;
 
         private Thread clientThread;
 
+        private UdpClient udpClient;
+
+        private IPEndPoint serverEndpoint;
+
+        private bool serverSentResponse = false;
+
         private bool shouldStop = false;
-
-        private const int BUFFER_SIZE = 1024 * 1000 * 4;
-
-        private byte[] buffer;
 
         public bool Running
         {
@@ -32,26 +37,19 @@ namespace UnityP2P
             }
         }
 
-        public Client(IPEndPoint remoteServerEndpoint, int clientPort = 8675)
+        public Client(IPEndPoint serverEndpoint, int port = 8676)
         {
-            this.remoteServerEndpoint = remoteServerEndpoint;
-            this.clientEndpoint = new IPEndPoint(IPAddress.Any, clientPort);
-            tcpClient = new Socket(this.clientEndpoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+            this.serverEndpoint = serverEndpoint;
+            this.id = Guid.NewGuid().ToString();
+            this.udpClient = new UdpClient(new IPEndPoint(IPAddress.Any, port));
         }
 
         public void Start()
         {
-            clientThread = new Thread(() =>
+            this.clientThread = new Thread(() =>
             {
-                buffer = new byte[BUFFER_SIZE];
-                ConnectToServer();
-
-                while (!shouldStop)
-                {
-                    Thread.Sleep(1000);
-                }
+                SendConnectionTest();
             });
-
             clientThread.Start();
         }
 
@@ -60,97 +58,62 @@ namespace UnityP2P
             shouldStop = true;
         }
 
-
-
-        void ConnectToServer()
+        private void SendConnectionTest()
         {
-            try
+            int connectionAttempts = 0;
+            udpClient.Connect(serverEndpoint);
+            Task.Run(() =>
             {
-                tcpClient.Bind(clientEndpoint);
-                tcpClient.Connect(remoteServerEndpoint);
-            }
-            catch (Exception e)
-            {
-                Debug.LogError(e.Message);
-                Stop();
-            }
-            if (!shouldStop)
-            {
-                ListenForData();
-            }
-        }
-
-        void ListenForData()
-        {
-            tcpClient.BeginReceive(buffer, 0, buffer.Length, SocketFlags.None, DataReceived, tcpClient);
-        }
-
-        void DataReceived(IAsyncResult AR)
-        {
-            Socket clientSocket = (Socket)AR.AsyncState;
-            int bytesReceived = clientSocket.EndReceive(AR);
-            if (bytesReceived == 0)
-            {
-                Debug.Log("Server disconnected...");
-                Stop();
-                return;
-            }
-            string builtString = "";
-            for (int i = 0; i < bytesReceived; i++)
-            {
-                var currentByte = buffer[i];
-                builtString += currentByte;
-            }
-            Debug.Log($"Data received from the server -- {builtString}");
-            Array.Clear(buffer, 0, buffer.Length);
+                while (!serverSentResponse && !shouldStop)
+                {
+                    var dataToSend = new ClientPacket(PacketDataType.BeginConnection, null, id);
+                    SendData(Encoder.GetObjectBytes(dataToSend));
+                    Debug.Log($"Attempting Connection... {connectionAttempts}");
+                    connectionAttempts++;
+                    Thread.Sleep(1000);
+                }
+                Debug.Log("Server connection successful");
+            });
             ListenForData();
         }
 
         public void SendData(byte[] data)
         {
-            if (!Running)
-            {
-                throw new Exception("Client is not running");
-            }
-            if (!tcpClient.Connected)
-            {
-                throw new Exception("Client is not connected to the server");
-            }
-            tcpClient.BeginSend(data, 0, data.Length, SocketFlags.None, DataSent, tcpClient);
+            udpClient.BeginSend(data, data.Length, DataSent, udpClient);
         }
 
-        void DataSent(IAsyncResult AR)
+        private void DataSent(IAsyncResult re)
         {
-            Socket clientSocket = (Socket)AR.AsyncState;
-            var bytesSent = clientSocket.EndSend(AR);
-            Debug.Log($"Sent {bytesSent} to the server....");
+            UdpClient client = (UdpClient)re.AsyncState;
+            int bytesSent = client.EndSend(re);
+            Debug.Log($"Sent {bytesSent} bytes to the server");
         }
 
-
-
-
-
-
-        protected virtual void Dispose(bool disposing)
+        private void ListenForData()
         {
-            if (!disposedValue)
+            while (Running && !shouldStop)
             {
-                if (disposing)
+                byte[] data = udpClient.Receive(ref serverEndpoint);
+                if (!serverSentResponse)
                 {
-                    // TODO: dispose managed state (managed objects)
+                    serverSentResponse = true;
                 }
-
-                // TODO: free unmanaged resources (unmanaged objects) and override finalizer
-                // TODO: set large fields to null
-                disposedValue = true;
+                ParseServerData(data);
             }
+        }
+
+        void ParseServerData(byte[] data)
+        {
+            ServerPacket packet = Encoder.GetServerPacket(data);
+            OnServerDataReceived?.Invoke(packet);
         }
 
         public void Dispose()
         {
-            // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
-            Dispose(disposing: true);
-            GC.SuppressFinalize(this);
+            Stop();
+            udpClient.Close();
+            udpClient.Dispose();
         }
+
     }
 }
