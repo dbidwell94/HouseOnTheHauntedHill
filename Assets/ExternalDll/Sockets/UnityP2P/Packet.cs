@@ -115,6 +115,19 @@ namespace UnityP2P
     }
 
     [Serializable]
+    public class ObjectMoveRequest
+    {
+        public string objectId;
+        public TransformData transformData;
+
+        public ObjectMoveRequest(string objectId, TransformData tData)
+        {
+            this.objectId = objectId;
+            this.transformData = tData;
+        }
+    }
+
+    [Serializable]
     public enum ObjectInstanciationType
     {
         Character,

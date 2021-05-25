@@ -64,7 +64,6 @@ namespace UnityP2P
         void ReceiveData()
         {
             IPEndPoint remoteEndpoint = new IPEndPoint(IPAddress.Any, 0);
-
             EndPoint ep = (EndPoint)remoteEndpoint;
 
             while (Running && !shouldStop)
@@ -77,10 +76,22 @@ namespace UnityP2P
             }
         }
 
-        public void SendData(ServerPacket packet, IPEndPoint ep)
+        public void SendData(ServerPacket packet, string clientId)
         {
-            udpServer.Connect(ep);
+            if (!clients.ContainsKey(clientId))
+            {
+                throw new Exception($"Unable to send to {clientId} -- client not connected");
+            }
+            udpServer.Connect(clients[clientId]);
             udpServer.Send(Encoder.GetObjectBytes(packet));
+        }
+
+        public void SendData(ServerPacket packet)
+        {
+            foreach (var client in clients)
+            {
+                SendData(packet, client.Key);
+            }
         }
 
         void ParseByteData(byte[] data, IPEndPoint clientEndpoint)
@@ -93,7 +104,7 @@ namespace UnityP2P
             }
             if (packet.dataType == PacketDataType.BeginConnection)
             {
-                SendData(new ServerPacket(PacketDataType.BeginConnection, packet.clientId), clientEndpoint);
+                SendData(new ServerPacket(PacketDataType.BeginConnection, packet.clientId), packet.clientId);
             }
             OnDataReceived?.Invoke(packet);
         }

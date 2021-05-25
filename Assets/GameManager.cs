@@ -7,6 +7,7 @@ public class GameManager : MonoBehaviour
 {
     public RoomCard[] roomPrefabs;
 
+    [SerializeField]
     public CharacterPrefab[] characterPrefabs;
 
     public Vector2 DefaultRoomSize { get; } = new Vector2(11, 4);
@@ -92,7 +93,8 @@ public enum CharacterName
     NetworkLouise
 }
 
-public class CharacterPrefab
+[Serializable]
+public struct CharacterPrefab
 {
     [SerializeField]
     public CharacterName characterName;

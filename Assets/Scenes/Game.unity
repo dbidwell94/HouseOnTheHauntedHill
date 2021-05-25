@@ -409,7 +409,7 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 789277442}
-  m_LocalRotation: {x: 0.5740914, y: 0.000000058088094, z: -0.00000004072817, w: 0.8187913}
+  m_LocalRotation: {x: 0.5740914, y: -0.000000058088116, z: 0.00000004072819, w: 0.8187913}
   m_LocalPosition: {x: 0, y: 8, z: -3.7059999}
   m_LocalScale: {x: 0.5, y: 0.5, z: 0.5}
   m_Children: []
@@ -593,7 +593,7 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 839918403}
-  m_LocalRotation: {x: 0.57295275, y: -0.0028434775, z: 0.0019878182, w: 0.8195811}
+  m_LocalRotation: {x: 0.5729528, y: -0.002825534, z: 0.0019752746, w: 0.81958115}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children:
@@ -899,6 +899,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   roomPrefabs: []
+  characterPrefabs:
+  - characterName: 1
+    prefab: {fileID: 8653423835495294149, guid: 6da3e74969852cd42b01ba83eedb3ee2, type: 3}
 --- !u!4 &917199278
 Transform:
   m_ObjectHideFlags: 0
@@ -1105,7 +1108,7 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 997089420}
-  m_LocalRotation: {x: 0.43216184, y: 0.0020858152, z: -0.0009995749, w: 0.9017931}
+  m_LocalRotation: {x: 0.43216184, y: 0.0020726568, z: -0.0009932689, w: 0.9017932}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children:
@@ -1770,7 +1773,7 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1667367158}
-  m_LocalRotation: {x: 0.5740913, y: 0.000000045104986, z: -0.00000003162513, w: 0.81879133}
+  m_LocalRotation: {x: 0.5740913, y: -0.000000045105022, z: 0.000000031625152, w: 0.81879133}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children:
