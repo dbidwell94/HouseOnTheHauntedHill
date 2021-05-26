@@ -9,6 +9,11 @@ public class NetworkNavAgentController : Networkable, IHaveNavAgent
 
     public CharacterName myCharacterName;
 
+    new void Start()
+    {
+        base.Start();
+    }
+
     public CharacterName GetCharacterName()
     {
         return CharacterName.NetworkLouise;

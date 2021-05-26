@@ -1,9 +1,8 @@
 
-using UnityEngine.Serialization;
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Runtime.Serialization.Formatters.Binary;
+using UnityEngine;
 
 namespace UnityP2P
 {
@@ -21,23 +20,39 @@ namespace UnityP2P
             return toReturn;
         }
 
-        public static ClientPacket GetClientPacket(byte[] data)
+        public static void GetClientPacket(byte[] data, out ClientPacket cp)
         {
             using (MemoryStream ms = new MemoryStream(data))
             {
                 BinaryFormatter bf = new BinaryFormatter();
-                object toReturn = bf.Deserialize(ms);
-                return (ClientPacket)toReturn;
+                try
+                {
+                    object toReturn = bf.Deserialize(ms);
+                    cp = (ClientPacket)toReturn;
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError(e.Message);
+                    cp = null;
+                }
             }
         }
 
-        public static ServerPacket GetServerPacket(byte[] data)
+        public static void GetServerPacket(byte[] data, out ServerPacket sp)
         {
             using (MemoryStream ms = new MemoryStream(data))
             {
                 BinaryFormatter bf = new BinaryFormatter();
-                object toReturn = bf.Deserialize(ms);
-                return (ServerPacket)toReturn;
+                try
+                {
+                    object toReturn = bf.Deserialize(ms);
+                    sp = (ServerPacket)toReturn;
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError(e.Message);
+                    sp = null;
+                }
             }
         }
     }

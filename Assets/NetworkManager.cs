@@ -1,25 +1,41 @@
+using System;
+using System.Linq;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityP2P;
-using System;
 using System.Net;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
 
 public class NetworkManager : MonoBehaviour
 {
-    bool isServer = false;
-    Server gameServer;
-
-    Client gameClient;
-
     public static NetworkManager Instance { get; private set; }
 
-    private INetworkManager _network;
-
-    public Dictionary<string, Networkable> managedObjects { get; private set; } = new Dictionary<string, Networkable>();
+    private INetworkManager _network = null;
 
     private Queue<Action> networkActions = new Queue<Action>();
+
+    private HashSet<Networkable> networkables = new HashSet<Networkable>();
+
+    void Awake()
+    {
+        if (Instance is null)
+        {
+            Instance = this;
+        }
+        else
+        {
+            Debug.LogError("NetworkManager already exists, destorying this one");
+            Destroy(this);
+        }
+        GameObject.DontDestroyOnLoad(this.gameObject);
+    }
+
+    void QueueAction(Action a)
+    {
+        lock (networkActions)
+        {
+            networkActions.Enqueue(a);
+        }
+    }
 
     void FixedUpdate()
     {
@@ -30,386 +46,237 @@ public class NetworkManager : MonoBehaviour
                 networkActions.Dequeue()();
             }
         }
+    }
+
+    public void RegisterNetworkable(Networkable nw)
+    {
+        if (!networkables.Contains(nw))
+            networkables.Add(nw);
 
     }
 
-    void Awake()
+    public void ForgetNetworkable(Networkable nw)
     {
-        if (Instance is null)
-        {
-            Instance = this;
-            DontDestroyOnLoad(this.gameObject);
-        }
-        else
-        {
-            Debug.Log("Network manager already exists! Destroying this one");
-            Destroy(this);
-        }
-    }
+        if (networkables.Contains(nw))
+            networkables.Remove(nw);
 
-    void Start()
-    {
-        _network = new PassthoughClient();
     }
 
     public void StartServer(int port = 8675)
     {
-        gameServer = new Server(port);
-        gameServer.Start();
-        isServer = true;
-        _network = new NetworkManagerServer(gameServer);
-        gameServer.OnDataReceived += Server_DataReceived;
+        if (!(_network is null))
+            return;
+
+        var server = new Server(port);
+        server.OnClientDataReceived += Server_DataReceived;
+        server.OnClientConnected += Server_ClientConnected;
+        server.OnClientDisconnect += (endpoint) => Debug.Log($"{endpoint.Address}:{endpoint.Port} has disconnected");
+        _network = new NetworkServer(server);
     }
 
-    public void StartClient(int port = 8676)
+
+    public void StartClient(int serverPort = 8675)
     {
-        if (isServer)
-        {
-            throw new Exception("Cannot be a client and a server");
-        }
-        IPEndPoint serverEndpoint = new IPEndPoint(IPAddress.Loopback, 8675);
-        gameClient = new Client(serverEndpoint, port);
-        gameClient.Start();
-        _network = new NetworkManagerClient(gameClient);
-        gameClient.OnServerDataReceived += Client_DataReceived;
+        if (!(_network is null))
+            return;
+
+        var client = new Client(serverPort);
+        client.OnServerDataReceived += Client_DataReceived;
+        _network = new NetworkClient(client);
     }
 
-    #region Client side code
-    void Client_DataReceived(ServerPacket packet)
+
+    void Server_DataReceived(ClientPacket cp)
     {
-        lock (networkActions)
+        QueueAction(() =>
         {
-            networkActions.Enqueue(() =>
+            switch (cp.dataType)
             {
-                switch (packet.dataType)
-                {
-                    case PacketDataType.BeginConnection:
-                        Client_ConnectedToServer();
-                        return;
-
-                    case PacketDataType.Transform:
-                        Client_HandleObjectMove(packet);
-                        return;
-
-                    case PacketDataType.InstanciateObject:
-                        Debug.Log("Received request to instanciate an object from the server");
-                        Client_HandleObjectInstanciation(packet);
-                        return;
-
-                    default:
-                        Debug.Log("Unable to determine packet type");
-                        return;
-                }
-            });
-        }
-    }
-
-    void Client_HandleObjectMove(ServerPacket packet)
-    {
-        ObjectMoveRequest omr = (ObjectMoveRequest)packet.data;
-        if (managedObjects.ContainsKey(omr.objectId))
-        {
-            Networkable toMove = managedObjects[omr.objectId];
-            if (toMove is IHaveNavAgent)
-            {
-                ((IHaveNavAgent)toMove).MoveAgent((Vector3)omr.transformData.position);
-                return;
+                default:
+                    return;
             }
-            toMove.transform.position = (Vector3)omr.transformData.position;
-            toMove.transform.rotation = (Quaternion)omr.transformData.quaternion;
-        }
+        });
     }
 
-    void Client_HandleObjectInstanciation(ServerPacket packet)
+    void Server_ClientConnected(IPEndPoint clientEndpoint)
     {
-        ObjectInstanciationRequest or = (ObjectInstanciationRequest)packet.data;
-        switch (or.objectType)
+        QueueAction(() =>
         {
-            case ObjectInstanciationType.Character:
-                NetworkHelpers.InstanciateObject(or.positionData, ObjectInstanciationType.Character, CharacterName.NetworkLouise, or.objectId);
-                return;
-            default:
-                return;
-        }
-    }
-
-    void Client_ConnectedToServer()
-    {
-        // Tell server to instanciate our character
-        var myCharacter = managedObjects.Where((obj) => obj.Value is IHaveNavAgent).First().Value;
-        TransformData tData = new TransformData(myCharacter.transform.position, myCharacter.transform.rotation);
-        ObjectInstanciationRequest or = new ObjectInstanciationRequest(myCharacter.Id, tData, ObjectInstanciationType.Character);
-        ClientPacket cp = new ClientPacket(PacketDataType.InstanciateObject, or, gameClient.id);
-        gameClient.SendData(Encoder.GetObjectBytes(cp));
-    }
-
-    public void RequestInstanciate(Networkable objectToInstanciate)
-    {
-
-    }
-
-    #endregion
-
-    #region Server side code
-    void Server_DataReceived(ClientPacket packet)
-    {
-        lock (networkActions)
-        {
-            networkActions.Enqueue(() =>
+            foreach (var networkable in networkables)
             {
-                Debug.Log($"Sever data received from client {packet.clientId}... {packet.dataType}");
-                switch (packet.dataType)
-                {
-                    case PacketDataType.InstanciateObject:
-                        Server_InstanciateObject(packet);
-                        return;
-
-                    case PacketDataType.BeginConnection:
-                        Server_ClientConnected();
-                        return;
-
-                    default:
-                        return;
-                }
-            });
-        }
-    }
-
-    void Server_InstanciateObject(ClientPacket packet)
-    {
-        Debug.Log("Received request to instanciate the player");
-        ObjectInstanciationRequest or = (ObjectInstanciationRequest)packet.data;
-        switch (or.objectType)
-        {
-            case ObjectInstanciationType.Character:
-                _network.Instanciate(or.positionData, or.objectType, CharacterName.Louise);
-                Server_ClientConnected();
-                return;
-            default:
-                return;
-        }
-    }
-
-    void Server_ClientConnected()
-    {
-        foreach (var obj in managedObjects)
-        {
-            var val = obj.Value;
-            // This is a character. Send character instanciation packet
-            if (obj.Value is IHaveNavAgent)
-            {
-                Debug.Log("Client connected: Attempting to send server data to all other connected clients");
-                TransformData tData = new TransformData(val.transform.position, val.transform.rotation);
-                _network.Instanciate(tData, ObjectInstanciationType.Character, CharacterName.NetworkLouise, obj.Key);
+                Debug.Log($"Requesting {networkable.NetworkId} be instanciated on the client");
+                _network.RequestInstanciate(clientEndpoint, networkable);
             }
+        });
+    }
+
+    void Client_DataReceived(ServerPacket sp)
+    {
+        QueueAction(() =>
+        {
+            switch (sp.dataType)
+            {
+                case PacketDataType.InstanciateObject:
+                    {
+                        var or = (ObjectInstanciationRequest)sp.data;
+                        Client_HandleServerInstanciationRequest(or);
+                    }
+                    return;
+
+                case PacketDataType.Transform:
+                    {
+                        var or = (ObjectMoveRequest)sp.data;
+                        Client_HandleServerMoveRequest(or);
+                    }
+                    return;
+
+                default:
+                    return;
+            }
+        });
+    }
+
+    void Client_HandleServerInstanciationRequest(ObjectInstanciationRequest or)
+    {
+        if (or.objectType == ObjectInstanciationType.Character)
+        {
+            var prefab = GameManager.Instance.characterPrefabs.Where((prefab) => prefab.characterName == CharacterName.NetworkLouise).First();
+            var instanciated = Instantiate(prefab.prefab, (Vector3)or.positionData.position, (Quaternion)or.positionData.quaternion);
+            instanciated.GetComponent<Networkable>().NetworkId = or.objectId;
         }
     }
 
-    #endregion
-
-    public void ManageObject(Networkable objectToManage)
+    void Client_HandleServerMoveRequest(ObjectMoveRequest or)
     {
-        if (!managedObjects.ContainsKey(objectToManage.Id))
-            managedObjects.Add(objectToManage.Id, objectToManage);
+        throw new NotImplementedException();
     }
 
-    public void ForgetObject(Networkable toForget)
-    {
-        if (managedObjects.ContainsKey(toForget.Id))
-            managedObjects.Remove(toForget.Id);
-    }
 
-    public void ForgetObject(string idOfNetworkable)
+    public void KillServer()
     {
-        if (managedObjects.ContainsKey(idOfNetworkable))
-            managedObjects.Remove(idOfNetworkable);
-    }
-
-    public void RequestMoveObject(Networkable requestingObject, Transform position)
-    {
-        RequestMoveObject(requestingObject, new TransformData(position.position, position.rotation));
-    }
-
-    public void RequestMoveObject(Networkable requestingObject, TransformData tData)
-    {
-        _network.MoveObjectTo(requestingObject, tData);
-    }
-
-    public void RequestMoveObject(Networkable requestingObject, Vector3 location)
-    {
-        RequestMoveObject(requestingObject, new TransformData(location));
-    }
-
-    void Update()
-    {
-
+        _network?.KillServer();
     }
 
     void OnDestroy()
     {
-        if (!(gameClient is null) && gameClient.Running)
-        {
-            gameClient.Stop();
-        }
-        if (!(gameServer is null) && gameServer.Running)
-        {
-            gameServer.Stop();
-        }
+        _network?.KillServer();
     }
 }
 
-public interface INetworkManager
+interface INetworkManager
 {
-    public void MoveObjectTo(Networkable obj, TransformData transformData);
+    void KillServer();
 
-    public Networkable Instanciate(TransformData transformData, ObjectInstanciationType instanciationType, object data, string key = null);
+    void SendMessage(object message);
+
+    void SendMessage(IPEndPoint endPoint, object message);
+
+    void SyncNetworkableTransform(IPEndPoint endPoint, Networkable[] networkables);
+
+    void RequestInstanciate(IPEndPoint endPoint, Networkable toInstanciate);
+
+}
+
+class NetworkServer : INetworkManager
+{
+    Server server;
+
+    public NetworkServer(Server s)
+    {
+        server = s;
+        server.Start();
+        Debug.Log("Server started...");
+    }
+
+    public void KillServer()
+    {
+        server.Stop();
+    }
+
+    public void RequestInstanciate(IPEndPoint endPoint, Networkable toInstanciate)
+    {
+        ObjectInstanciationType instanciationType = (toInstanciate is IHaveNavAgent) ? ObjectInstanciationType.Character : ObjectInstanciationType.Room;
+
+        ObjectInstanciationRequest or = new ObjectInstanciationRequest(
+            toInstanciate.NetworkId,
+            new TransformData(toInstanciate.transform.position, toInstanciate.transform.rotation),
+            instanciationType);
+
+        var sp = new ServerPacket(PacketDataType.InstanciateObject, or);
+        server.SendPacket(endPoint, sp);
+    }
+
+    public void SendMessage(object data)
+    {
+        ServerPacket sp = new ServerPacket(PacketDataType.Message, data);
+        server.SendPacketToAllClients(sp);
+    }
+
+    public void SendMessage(IPEndPoint endPoint, object message)
+    {
+        ServerPacket sp = new ServerPacket(PacketDataType.Message, message);
+        server.SendPacket(endPoint, sp);
+    }
+
+    public void SyncNetworkableTransform(IPEndPoint endPoint, Networkable[] networkables)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+class NetworkClient : INetworkManager
+{
+    Client client;
+    public NetworkClient(Client c)
+    {
+        client = c;
+        client.Start();
+    }
+
+    public void KillServer()
+    {
+        client.Stop();
+    }
+
+    public void RequestInstanciate(IPEndPoint endPoint, Networkable toInstanciate)
+    {
+        throw new NotImplementedException();
+    }
+
+    public void SendMessage(object data)
+    {
+
+    }
+
+    public void SendMessage(IPEndPoint endPoint, object message)
+    {
+        throw new NotImplementedException();
+    }
+
+    public void SyncNetworkableTransform(IPEndPoint endPoint, Networkable[] networkables)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+public abstract class Networkable : MonoBehaviour
+{
+    public string NetworkId = null;
+
+    protected void Start()
+    {
+        if (NetworkId is null)
+            NetworkId = System.Guid.NewGuid().ToString();
+        NetworkManager.Instance.RegisterNetworkable(this);
+    }
+
+    protected void OnDestroy()
+    {
+        NetworkManager.Instance.ForgetNetworkable(this);
+    }
 }
 
 public interface IHaveNavAgent
 {
-    public void MoveAgent(Vector3 destination);
-
-    public CharacterName GetCharacterName();
-}
-
-
-public abstract class Networkable : MonoBehaviour
-{
-    public string Id { get; set; }
-
-    protected void Start()
-    {
-        if (Id is null)
-            Id = System.Guid.NewGuid().ToString();
-        NetworkManager.Instance.ManageObject(this);
-    }
-
-    void Destoy()
-    {
-        if (!(NetworkManager.Instance is null))
-        {
-            NetworkManager.Instance.ForgetObject(this);
-        }
-    }
-}
-
-
-#region INetworkManager implementations
-public class NetworkManagerServer : INetworkManager
-{
-    Server networkServer;
-
-    public NetworkManagerServer(Server currentServer)
-    {
-        networkServer = currentServer;
-    }
-
-    public void MoveObjectTo(Networkable obj, TransformData tData)
-    {
-        if (obj is IHaveNavAgent)
-        {
-            ((IHaveNavAgent)obj).MoveAgent((Vector3)tData.position);
-        }
-        ObjectMoveRequest omr = new ObjectMoveRequest(obj.Id, tData);
-        ServerPacket movePacket = new ServerPacket(PacketDataType.Transform, omr);
-        networkServer.SendData(movePacket);
-    }
-
-    public Networkable Instanciate(TransformData transformData, ObjectInstanciationType instanciationType, object data, string key = null)
-    {
-        if (key is null)
-            return NetworkHelpers.InstanciateObject(transformData, instanciationType, data);
-        else
-            return NetworkHelpers.InstanciateObject(transformData, instanciationType, data, key);
-
-    }
-}
-
-public class NetworkManagerClient : INetworkManager
-{
-    Client networkClient;
-
-    public NetworkManagerClient(Client currentClient)
-    {
-        networkClient = currentClient;
-    }
-
-    public void MoveObjectTo(Networkable obj, TransformData tData)
-    {
-        if (obj is IHaveNavAgent)
-        {
-            ((IHaveNavAgent)obj).MoveAgent((Vector3)tData.position);
-        }
-        else
-        {
-            obj.transform.position = (Vector3)tData.position;
-        }
-    }
-
-    public Networkable Instanciate(TransformData transformData, ObjectInstanciationType instanciationType, object data, string key = null)
-    {
-        if (key is null)
-        {
-            throw new Exception("Unable to instanciate object with no key");
-        }
-        if (NetworkManager.Instance.managedObjects.ContainsKey(key))
-        {
-            return null;
-        }
-        return NetworkHelpers.InstanciateObject(transformData, instanciationType, data, key);
-    }
-}
-
-public class PassthoughClient : INetworkManager
-{
-    public void MoveObjectTo(Networkable obj, TransformData tData)
-    {
-        if (obj is IHaveNavAgent)
-        {
-            ((IHaveNavAgent)obj).MoveAgent((Vector3)tData.position);
-        }
-        else
-        {
-            obj.transform.position = (Vector3)tData.position;
-        }
-    }
-
-    public Networkable Instanciate(TransformData transformData, ObjectInstanciationType instanciationType, object data, string key = null)
-    {
-        return NetworkHelpers.InstanciateObject(transformData, instanciationType, data);
-    }
-
-}
-
-#endregion
-
-public static class NetworkHelpers
-{
-    public static Networkable InstanciateObject(TransformData location, ObjectInstanciationType instanciationType, object args)
-    {
-        switch (instanciationType)
-        {
-            case ObjectInstanciationType.Character:
-                CharacterName name = CharacterName.NetworkLouise;
-                var prefab = GameManager.Instance.characterPrefabs.Where((prefab) => prefab.characterName == name).First().prefab;
-                var instanciated = GameObject.Instantiate(prefab, (Vector3)location.position, (Quaternion)location.quaternion);
-                return instanciated.GetComponent<Networkable>();
-            default:
-                return null;
-        }
-    }
-
-    public static Networkable InstanciateObject(TransformData location, ObjectInstanciationType instanciationType, object args, string key)
-    {
-        if (!NetworkManager.Instance.managedObjects.ContainsKey(key))
-        {
-            var networkObj = InstanciateObject(location, instanciationType, args);
-            if (!(key is null))
-            {
-                networkObj.Id = key;
-            }
-            return networkObj;
-        }
-        return null;
-    }
+    void MoveAgent(Vector3 location);
 }

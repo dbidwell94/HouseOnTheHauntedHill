@@ -71,6 +71,11 @@ public class GameManager : MonoBehaviour
             throw new NotImplementedException();
         }
     }
+
+    public void QuitGame()
+    {
+        NetworkManager.Instance.KillServer();
+    }
 }
 
 public static class Randomizer

@@ -1,119 +1,155 @@
 using System;
 using System.Collections.Generic;
-using System.Threading;
+using System.Threading.Tasks;
 using System.Net;
 using System.Net.Sockets;
 using UnityEngine;
 
 namespace UnityP2P
 {
-    public class Server : IDisposable
+    public class Server
     {
-        #region events
-
-        public delegate void UdpServerDelegate(ClientPacket packet);
-        public event UdpServerDelegate OnDataReceived;
-
+        #region Events
+        public delegate void ServerEvent(ClientPacket packet);
+        public delegate void ServerEventEndpoint(IPEndPoint clientEndpoint);
+        public event ServerEvent OnClientDataReceived;
+        public event ServerEventEndpoint OnClientConnected;
+        public event ServerEventEndpoint OnClientDisconnect;
         #endregion
 
-        private Thread serverThread;
 
-        private Socket udpServer;
+        private TcpListener listener;
 
         private IPEndPoint serverEndpoint;
 
-        private const int BUFFER_SIZE = 1024 * 1000 * 4;
+        private Dictionary<IPEndPoint, TcpClient> clients = new Dictionary<IPEndPoint, TcpClient>();
 
-        byte[] buffer;
-
-        private bool shouldStop = false;
-
-        Dictionary<string, IPEndPoint> clients = new Dictionary<string, IPEndPoint>();
-
-        public bool Running
+        public int ConnectedClients
         {
             get
             {
-                return serverThread != null && serverThread.IsAlive;
+                return clients.Count;
             }
         }
+
+        private const int CLIENT_BUFFER_LENGTH = 1024 * 1000;
 
         public Server(int port = 8675)
         {
             serverEndpoint = new IPEndPoint(IPAddress.Any, port);
-            udpServer = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+            listener = new TcpListener(serverEndpoint);
         }
 
         public void Start()
         {
-            serverThread = new Thread(() =>
-            {
-                buffer = new byte[BUFFER_SIZE];
-                udpServer.Bind(serverEndpoint);
-                Debug.Log($"Server started at -- {serverEndpoint.Address}:{serverEndpoint.Port}");
-                ReceiveData();
-            });
-            serverThread.Start();
+            listener.Start(16);
+            listener.BeginAcceptTcpClient(TcpClientConnected, null);
         }
 
         public void Stop()
         {
-            shouldStop = true;
+            lock (clients)
+            {
+                foreach (var client in clients.Values)
+                {
+                    client.GetStream().Close();
+                    client.Close();
+                    client.Dispose();
+                }
+            }
+            listener.Stop();
         }
 
-        void ReceiveData()
+        void TcpClientConnected(IAsyncResult ar)
         {
-            IPEndPoint remoteEndpoint = new IPEndPoint(IPAddress.Any, 0);
-            EndPoint ep = (EndPoint)remoteEndpoint;
-
-            while (Running && !shouldStop)
+            TcpClient clientConnection = listener.EndAcceptTcpClient(ar);
+            listener.BeginAcceptTcpClient(TcpClientConnected, null);
+            IPEndPoint clientEndpoint = (IPEndPoint)clientConnection.Client.RemoteEndPoint;
+            if (!clients.ContainsKey(clientEndpoint))
             {
-                var receivedBytes = udpServer.ReceiveFrom(buffer, 0, buffer.Length, SocketFlags.None, ref ep);
-                byte[] receivedDataArray = new byte[receivedBytes];
-                Array.Copy(buffer, receivedDataArray, receivedBytes);
-                Array.Clear(buffer, 0, buffer.Length);
-                ParseByteData(receivedDataArray, (IPEndPoint)ep);
+                clients.Add(clientEndpoint, clientConnection);
             }
+            Task.Run(() => ReceiveClientData(clientConnection));
+            OnClientConnected?.Invoke(clientEndpoint);
         }
 
-        public void SendData(ServerPacket packet, string clientId)
+        void ReceiveClientData(TcpClient client)
         {
-            if (!clients.ContainsKey(clientId))
+            byte[] clientBuffer = new byte[CLIENT_BUFFER_LENGTH];
+            int bytesRead = 0;
+            using (NetworkStream ns = new NetworkStream(client.Client))
             {
-                throw new Exception($"Unable to send to {clientId} -- client not connected");
+                while (client.Connected)
+                {
+                    bytesRead = ns.Read(clientBuffer, 0, clientBuffer.Length);
+                    if (bytesRead == 0)
+                        break;
+
+                    byte[] data = new byte[bytesRead];
+                    Array.Copy(clientBuffer, data, bytesRead);
+                    Array.Clear(clientBuffer, 0, clientBuffer.Length);
+                    ParseData(data);
+                }
             }
-            udpServer.Connect(clients[clientId]);
-            udpServer.Send(Encoder.GetObjectBytes(packet));
+            IPEndPoint clientEndpoint = (IPEndPoint)client.Client.RemoteEndPoint;
+            DisconnectClient(clientEndpoint);
         }
 
-        public void SendData(ServerPacket packet)
+        public void SendPacketToAllClients(ServerPacket sp)
         {
-            foreach (var client in clients)
+            Task.Run(() =>
             {
-                SendData(packet, client.Key);
-            }
+                lock (clients)
+                {
+                    foreach (var clientKV in clients)
+                    {
+                        var client = clientKV.Value;
+                        if (!client.Connected) { DisconnectClient(clientKV.Key); continue; }
+                        byte[] dataStream = Encoder.GetObjectBytes(sp);
+                        client.GetStream().Write(dataStream, 0, dataStream.Length);
+                    }
+                }
+            });
         }
 
-        void ParseByteData(byte[] data, IPEndPoint clientEndpoint)
+        public void SendPacket(IPEndPoint endpoint, ServerPacket sp)
         {
-            ClientPacket packet = Encoder.GetClientPacket(data);
+            lock (clients)
+            {
+                if (clients.ContainsKey(endpoint) && clients[endpoint].Connected)
+                {
+                    Task.Run(() =>
+                    {
+                        byte[] dataStream = Encoder.GetObjectBytes(sp);
+                        clients[endpoint].GetStream().Write(dataStream, 0, dataStream.Length);
+                    });
+                }
+                else
+                    Debug.LogError($"{endpoint.Address}:{endpoint.Port} is not available");
+            }
 
-            if (!clients.ContainsKey(packet.clientId))
-            {
-                clients.Add(packet.clientId, clientEndpoint);
-            }
-            if (packet.dataType == PacketDataType.BeginConnection)
-            {
-                SendData(new ServerPacket(PacketDataType.BeginConnection, packet.clientId), packet.clientId);
-            }
-            OnDataReceived?.Invoke(packet);
         }
 
-        public void Dispose()
+        void ParseData(byte[] data)
         {
-            Stop();
-            udpServer.Disconnect(false);
-            udpServer.Dispose();
+            Encoder.GetClientPacket(data, out ClientPacket cp);
+            if (cp is null)
+                return;
+            OnClientDataReceived?.Invoke(cp);
+        }
+
+        void DisconnectClient(IPEndPoint client)
+        {
+            lock (clients)
+            {
+                if (clients.ContainsKey(client))
+                {
+                    clients[client].Close();
+                    clients[client].Dispose();
+                    clients.Remove(client);
+                }
+            }
+            OnClientDisconnect?.Invoke(client);
         }
     }
 }

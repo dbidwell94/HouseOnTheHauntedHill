@@ -38,9 +38,8 @@ namespace UnityP2P
     public enum PacketDataType
     {
         Transform,
-        BeginConnection,
-        EndConnection,
-        InstanciateObject
+        InstanciateObject,
+        Message
     }
 
     [Serializable]
