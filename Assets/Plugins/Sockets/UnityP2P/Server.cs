@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using System.Threading;
 using System.Net;
 using System.Net.Sockets;
 using UnityEngine;
+using Open.Nat;
 
 namespace UnityP2P
 {
@@ -43,6 +45,18 @@ namespace UnityP2P
         public void Start()
         {
             listener.Start(16);
+
+            var discoverer = new NatDiscoverer();
+            var cts = new CancellationTokenSource(10000);
+            discoverer.DiscoverDeviceAsync(PortMapper.Upnp, cts).ContinueWith((device) =>
+            {
+                device.Result?.CreatePortMapAsync(new Mapping(Protocol.Tcp, serverEndpoint.Port, serverEndpoint.Port, "House on the Haunted Hill")).ContinueWith((_) =>
+                {
+                    Debug.Log("Port mapping created");
+                });
+            });
+
+            // Listen for connections
             listener.BeginAcceptTcpClient(TcpClientConnected, null);
         }
 
