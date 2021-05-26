@@ -490,7 +490,7 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 789277442}
-  m_LocalRotation: {x: 0.5740914, y: -0.00000005808811, z: 0.00000004072818, w: 0.8187913}
+  m_LocalRotation: {x: 0.5740914, y: -0.000000039924757, z: 0.000000027993043, w: 0.8187913}
   m_LocalPosition: {x: 0, y: 8, z: -3.7059999}
   m_LocalScale: {x: 0.5, y: 0.5, z: 0.5}
   m_Children: []
@@ -674,7 +674,7 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 839918403}
-  m_LocalRotation: {x: 0.5729528, y: -0.002825534, z: 0.0019752744, w: 0.81958115}
+  m_LocalRotation: {x: 0.57295275, y: -0.0028255342, z: 0.0019752744, w: 0.81958115}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children:
@@ -1323,8 +1323,8 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 997089420}
-  m_LocalRotation: {x: 0.43216184, y: 0.002072657, z: -0.000993269, w: 0.9017932}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalRotation: {x: 0.45211217, y: 0.0020500526, z: -0.0010391223, w: 0.8919582}
+  m_LocalPosition: {x: 0, y: 0.518795, z: 0.014148712}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children:
   - {fileID: 1098264830}
@@ -1988,7 +1988,7 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1667367158}
-  m_LocalRotation: {x: 0.5740913, y: -0.000000045105, z: 0.000000031625138, w: 0.81879133}
+  m_LocalRotation: {x: 0.5740913, y: -0.000000015944261, z: 0.000000011179236, w: 0.81879133}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children:
@@ -2527,7 +2527,7 @@ MonoBehaviour:
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
           m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
-          m_IntArgument: 8676
+          m_IntArgument: 8675
           m_FloatArgument: 0
           m_StringArgument: 
           m_BoolArgument: 0

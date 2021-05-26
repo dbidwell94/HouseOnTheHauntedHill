@@ -168,6 +168,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   myAgent: {fileID: 7502669594344958388}
+  myCharacterName: 1
+  myAnimator: {fileID: 188995023964649887}
 --- !u!1001 &6049992710590956558
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -240,6 +242,11 @@ PrefabInstance:
 --- !u!4 &6088687671612761061 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 1a98b0ad72676004bad394455c22fb15, type: 3}
+  m_PrefabInstance: {fileID: 6049992710590956558}
+  m_PrefabAsset: {fileID: 0}
+--- !u!95 &188995023964649887 stripped
+Animator:
+  m_CorrespondingSourceObject: {fileID: 5866666021909216657, guid: 1a98b0ad72676004bad394455c22fb15, type: 3}
   m_PrefabInstance: {fileID: 6049992710590956558}
   m_PrefabAsset: {fileID: 0}
 --- !u!4 &6367640113715094780 stripped

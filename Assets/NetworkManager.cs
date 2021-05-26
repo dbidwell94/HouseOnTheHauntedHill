@@ -13,7 +13,8 @@ public class NetworkManager : MonoBehaviour
 
     private Queue<Action> networkActions = new Queue<Action>();
 
-    private HashSet<Networkable> networkables = new HashSet<Networkable>();
+    /// <summary> Provides a way to look up a networkable by the networkable ID </summary>
+    private Dictionary<string, Networkable> networkables = new Dictionary<string, Networkable>();
 
     void Awake()
     {
@@ -50,15 +51,19 @@ public class NetworkManager : MonoBehaviour
 
     public void RegisterNetworkable(Networkable nw)
     {
-        if (!networkables.Contains(nw))
-            networkables.Add(nw);
+        Debug.Log($"Requesting to register networkable: {nw.NetworkId}");
+        if (!networkables.ContainsKey(nw.NetworkId))
+            networkables.Add(nw.NetworkId, nw);
 
     }
 
     public void ForgetNetworkable(Networkable nw)
     {
-        if (networkables.Contains(nw))
-            networkables.Remove(nw);
+        if (nw.NetworkId is null)
+            return;
+
+        if (networkables.ContainsKey(nw.NetworkId))
+            networkables.Remove(nw.NetworkId);
 
     }
 
@@ -82,27 +87,73 @@ public class NetworkManager : MonoBehaviour
 
         var client = new Client(serverPort);
         client.OnServerDataReceived += Client_DataReceived;
+        client.OnServerConnected += Client_ServerConnected;
+        client.OnServerDisconnected += (_) => KillServer();
         _network = new NetworkClient(client);
     }
 
-
+    /// <summary>Event handler for data received event </summary>
     void Server_DataReceived(ClientPacket cp)
     {
         QueueAction(() =>
         {
             switch (cp.dataType)
             {
+                case PacketDataType.InstanciateObject:
+                    {
+                        var or = (ObjectInstanciationRequest)cp.data;
+                        Server_HandleInstanciationRequest(or);
+                    }
+                    return;
+
+                case PacketDataType.Transform:
+                    {
+                        var or = (ObjectMoveRequest)cp.data;
+                        Server_HandleClientMoveRequest(or);
+                    }
+                    return;
+
                 default:
                     return;
             }
         });
     }
 
+    void Server_HandleInstanciationRequest(ObjectInstanciationRequest or)
+    {
+        if (networkables.ContainsKey(or.objectId))
+            return;
+
+        var instanciatedNetworkable = InstanciateObjectLocally(or);
+        _network.RequestInstanciate(null, instanciatedNetworkable);
+    }
+
+    void Server_HandleClientMoveRequest(ObjectMoveRequest or)
+    {
+        // TODO: logic to check if move is valid
+        if (!networkables.ContainsKey(or.objectId))
+            return;
+
+        Networkable toMove = networkables[or.objectId];
+        if (toMove is IHaveNavAgent)
+        {
+            ((IHaveNavAgent)toMove).MoveAgent((Vector3)or.transformData.position);
+        }
+        else
+        {
+            toMove.transform.position = (Vector3)or.transformData.position;
+            toMove.transform.rotation = (Quaternion)or.transformData.quaternion;
+        }
+
+        _network.RequestMoveTo(toMove, (Vector3)or.transformData.position);
+    }
+
+    /// <summary>Event handler for the client connected event </summary>
     void Server_ClientConnected(IPEndPoint clientEndpoint)
     {
         QueueAction(() =>
         {
-            foreach (var networkable in networkables)
+            foreach (var networkable in networkables.Values)
             {
                 Debug.Log($"Requesting {networkable.NetworkId} be instanciated on the client");
                 _network.RequestInstanciate(clientEndpoint, networkable);
@@ -110,6 +161,7 @@ public class NetworkManager : MonoBehaviour
         });
     }
 
+    /// <summary> Event handler for the data received event </summary>
     void Client_DataReceived(ServerPacket sp)
     {
         QueueAction(() =>
@@ -138,23 +190,74 @@ public class NetworkManager : MonoBehaviour
 
     void Client_HandleServerInstanciationRequest(ObjectInstanciationRequest or)
     {
+        if (networkables.ContainsKey(or.objectId))
+            return;
+
+        InstanciateObjectLocally(or);
+    }
+
+    void Client_ServerConnected(IPEndPoint serverEndpoint)
+    {
+        QueueAction(() =>
+        {
+            var player = networkables.Values.Where((obj) => obj is IHaveNavAgent).First();
+            if (!(player is null))
+                _network.RequestInstanciate(serverEndpoint, player);
+        });
+    }
+
+    void Client_HandleServerMoveRequest(ObjectMoveRequest or)
+    {
+        if (!networkables.ContainsKey(or.objectId))
+            return;
+
+        Networkable toMove = networkables[or.objectId];
+        if (toMove is IHaveNavAgent)
+        {
+            ((IHaveNavAgent)toMove).MoveAgent((Vector3)or.transformData.position);
+            return;
+        }
+        toMove.transform.position = (Vector3)or.transformData.position;
+        toMove.transform.rotation = (Quaternion)or.transformData.quaternion;
+    }
+
+    Networkable InstanciateObjectLocally(ObjectInstanciationRequest or)
+    {
         if (or.objectType == ObjectInstanciationType.Character)
         {
             var prefab = GameManager.Instance.characterPrefabs.Where((prefab) => prefab.characterName == CharacterName.NetworkLouise).First();
             var instanciated = Instantiate(prefab.prefab, (Vector3)or.positionData.position, (Quaternion)or.positionData.quaternion);
             instanciated.GetComponent<Networkable>().NetworkId = or.objectId;
+            return instanciated.GetComponent<Networkable>();
         }
+        return null;
     }
 
-    void Client_HandleServerMoveRequest(ObjectMoveRequest or)
+    public void RequestMoveObject(Networkable toMove, Vector3 moveTo)
     {
-        throw new NotImplementedException();
+        if (_network is null)
+        {
+            if (toMove is IHaveNavAgent)
+            {
+                ((IHaveNavAgent)toMove).MoveAgent(moveTo);
+                return;
+            }
+            toMove.transform.position = moveTo;
+            return;
+        }
+        if (_network is NetworkServer)
+        {
+            var tData = new TransformData(moveTo);
+            var or = new ObjectMoveRequest(toMove.NetworkId, tData);
+            Client_HandleServerMoveRequest(or);
+        }
+        _network.RequestMoveTo(toMove, moveTo);
     }
-
 
     public void KillServer()
     {
         _network?.KillServer();
+        _network = null;
     }
 
     void OnDestroy()
@@ -175,6 +278,8 @@ interface INetworkManager
 
     void RequestInstanciate(IPEndPoint endPoint, Networkable toInstanciate);
 
+    void RequestMoveTo(Networkable nw, Vector3 position);
+
 }
 
 class NetworkServer : INetworkManager
@@ -193,7 +298,7 @@ class NetworkServer : INetworkManager
         server.Stop();
     }
 
-    public void RequestInstanciate(IPEndPoint endPoint, Networkable toInstanciate)
+    public void RequestInstanciate(IPEndPoint endpoint, Networkable toInstanciate)
     {
         ObjectInstanciationType instanciationType = (toInstanciate is IHaveNavAgent) ? ObjectInstanciationType.Character : ObjectInstanciationType.Room;
 
@@ -203,7 +308,18 @@ class NetworkServer : INetworkManager
             instanciationType);
 
         var sp = new ServerPacket(PacketDataType.InstanciateObject, or);
-        server.SendPacket(endPoint, sp);
+
+        if (!(endpoint is null))
+            server.SendPacket(endpoint, sp);
+        else
+            server.SendPacketToAllClients(sp);
+    }
+
+    public void RequestMoveTo(Networkable nw, Vector3 position)
+    {
+        var tData = new TransformData(position);
+        var or = new ObjectMoveRequest(nw.NetworkId, tData);
+        server.SendPacketToAllClients(new ServerPacket(PacketDataType.Transform, or));
     }
 
     public void SendMessage(object data)
@@ -227,8 +343,10 @@ class NetworkServer : INetworkManager
 class NetworkClient : INetworkManager
 {
     Client client;
+    string clientId;
     public NetworkClient(Client c)
     {
+        clientId = Guid.NewGuid().ToString();
         client = c;
         client.Start();
     }
@@ -240,12 +358,21 @@ class NetworkClient : INetworkManager
 
     public void RequestInstanciate(IPEndPoint endPoint, Networkable toInstanciate)
     {
-        throw new NotImplementedException();
+        var tData = new TransformData(toInstanciate.transform.position, toInstanciate.transform.rotation);
+        var or = new ObjectInstanciationRequest(toInstanciate.NetworkId, tData, ObjectInstanciationType.Character);
+        client.SendPacket(new ClientPacket(PacketDataType.InstanciateObject, or, clientId));
+    }
+
+    public void RequestMoveTo(Networkable nw, Vector3 position)
+    {
+        var tData = new TransformData(position);
+        var or = new ObjectMoveRequest(nw.NetworkId, tData);
+        client.SendPacket(new ClientPacket(PacketDataType.Transform, or, clientId));
     }
 
     public void SendMessage(object data)
     {
-
+        throw new NotImplementedException();
     }
 
     public void SendMessage(IPEndPoint endPoint, object message)
@@ -261,13 +388,25 @@ class NetworkClient : INetworkManager
 
 public abstract class Networkable : MonoBehaviour
 {
-    public string NetworkId = null;
+    private string ___networkId = null;
+    public string NetworkId
+    {
+        get
+        {
+            return ___networkId;
+        }
+        set
+        {
+            NetworkManager.Instance?.ForgetNetworkable(this);
+            ___networkId = value;
+            NetworkManager.Instance?.RegisterNetworkable(this);
+        }
+    }
 
     protected void Start()
     {
         if (NetworkId is null)
             NetworkId = System.Guid.NewGuid().ToString();
-        NetworkManager.Instance.RegisterNetworkable(this);
     }
 
     protected void OnDestroy()

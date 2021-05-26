@@ -35,7 +35,7 @@ public class PlayerController : Networkable, IHaveNavAgent
         Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
         if (Physics.Raycast(ray, out hit) && hit.collider.gameObject.tag == "Floor")
         {
-            // NetworkManager.Instance.RequestMoveObject(this, new Vector3(hit.point.x, transform.position.y, hit.point.z));
+            NetworkManager.Instance.RequestMoveObject(this, new Vector3(hit.point.x, transform.position.y, hit.point.z));
         }
     }
 

@@ -12,9 +12,10 @@ namespace UnityP2P
         #region Events
 
         public delegate void ClientEvent(ServerPacket packet);
-        public delegate void ClientEventNoData();
+        public delegate void ClientEventEndpoint(IPEndPoint serverEndpoint);
         public event ClientEvent OnServerDataReceived;
-        public event ClientEventNoData OnServerConnected;
+        public event ClientEventEndpoint OnServerConnected;
+        public event ClientEventEndpoint OnServerDisconnected;
 
         #endregion
 
@@ -30,14 +31,14 @@ namespace UnityP2P
         {
             IPEndPoint localEndpoint = new IPEndPoint(IPAddress.Any, 0);
             sender = new TcpClient(localEndpoint);
-            this.serverEndpoint = new IPEndPoint(IPAddress.Any, serverPort);
+            this.serverEndpoint = new IPEndPoint(IPAddress.Loopback, serverPort);
             readBuffer = new byte[CLIENT_BUFFER_LENGTH];
         }
 
         public void Start()
         {
             sender.Connect(serverEndpoint);
-            OnServerConnected?.Invoke();
+            OnServerConnected?.Invoke(serverEndpoint);
             Task.Run(() => Transmit());
         }
 
@@ -49,6 +50,7 @@ namespace UnityP2P
                 sender.Close();
             }
             sender.Dispose();
+            OnServerDisconnected?.Invoke(serverEndpoint);
         }
 
         void Transmit()
@@ -71,12 +73,16 @@ namespace UnityP2P
             while (sender.Connected)
             {
                 int bytesRead = stream.Read(readBuffer, 0, readBuffer.Length);
-                Debug.Log($"Client received data: {bytesRead} bytes");
+
+                if (bytesRead == 0)
+                    break;
+
                 byte[] data = new byte[bytesRead];
                 Array.Copy(readBuffer, data, bytesRead);
                 Array.Clear(readBuffer, 0, readBuffer.Length);
                 ParseData(data);
             }
+            Stop();
         }
 
         void ParseData(byte[] data)
